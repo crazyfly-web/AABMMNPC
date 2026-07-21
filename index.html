@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 7 精選組合追蹤器</title>
+  <meta name="description" content="追蹤七檔美股精選組合、再平衡與 00757 累積報酬比較。" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">AI 7 PORTFOLIO</p>
+      <h1>精選組合 × 00757</h1>
+    </div>
+    <div class="status" id="status">等待載入</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel controls">
+      <div class="panel-title">
+        <div>
+          <h2>追蹤設定</h2>
+          <p>以美元資產換算新台幣後，與 00757 比較。</p>
+        </div>
+        <button id="refreshBtn" class="primary">更新資料</button>
+      </div>
+
+      <div class="control-grid">
+        <label>
+          起始日期
+          <input id="startDate" type="date" />
+        </label>
+
+        <label>
+          再平衡方式
+          <select id="rebalanceMode">
+            <option value="none">不再平衡</option>
+            <option value="monthly">每月</option>
+            <option value="quarterly" selected>每季</option>
+            <option value="semiannual">每半年</option>
+            <option value="annual">每年</option>
+            <option value="threshold">權重偏離門檻</option>
+          </select>
+        </label>
+
+        <label id="thresholdWrap" class="hidden">
+          偏離門檻（百分點）
+          <input id="threshold" type="number" min="1" max="20" step="0.5" value="5" />
+        </label>
+
+        <label>
+          初始本金（新台幣）
+          <input id="initialCapital" type="number" min="10000" step="10000" value="1000000" />
+        </label>
+      </div>
+
+      <div class="weights-wrap">
+        <div class="weights-head">
+          <h3>目標權重</h3>
+          <span id="weightTotal">合計 100%</span>
+        </div>
+        <div id="weights" class="weights"></div>
+      </div>
+    </section>
+
+    <section class="summary-grid">
+      <article class="metric">
+        <span>組合累積報酬</span>
+        <strong id="portfolioReturn">—</strong>
+      </article>
+      <article class="metric">
+        <span>00757 累積報酬</span>
+        <strong id="benchmarkReturn">—</strong>
+      </article>
+      <article class="metric">
+        <span>超額報酬</span>
+        <strong id="excessReturn">—</strong>
+      </article>
+      <article class="metric">
+        <span>再平衡次數</span>
+        <strong id="rebalanceCount">—</strong>
+      </article>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="panel-title compact">
+        <div>
+          <h2>累積總漲幅</h2>
+          <p>起始日歸一化為 100。</p>
+        </div>
+      </div>
+      <div class="chart-box">
+        <canvas id="performanceChart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title compact">
+        <div>
+          <h2>目前權重</h2>
+          <p>依最新收盤價計算。</p>
+        </div>
+      </div>
+      <div class="chart-box small">
+        <canvas id="weightsChart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-title compact">
+        <div>
+          <h2>每日收盤追蹤</h2>
+          <p>美股收盤價為美元；00757 為新台幣。</p>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>NVDA</th>
+              <th>MSFT</th>
+              <th>AVGO</th>
+              <th>GOOGL</th>
+              <th>AMZN</th>
+              <th>META</th>
+              <th>PLTR</th>
+              <th>USD/TWD</th>
+              <th>00757</th>
+              <th>組合累積</th>
+              <th>00757 累積</th>
+            </tr>
+          </thead>
+          <tbody id="dailyRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <template id="weightTemplate">
+    <label class="weight-row">
+      <span class="symbol"></span>
+      <span class="name"></span>
+      <input class="weight-input" type="number" min="0" max="100" step="1" />
+      <span class="pct">%</span>
+    </label>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>
