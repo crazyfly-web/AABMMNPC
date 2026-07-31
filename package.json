@@ -1,0 +1,14 @@
+{
+  "name": "big7-portfolio",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply BIG7_DB --local",
+    "db:remote": "wrangler d1 migrations apply BIG7_DB --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4.28.1"
+  }
+}

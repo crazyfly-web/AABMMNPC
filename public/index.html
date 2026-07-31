@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Big7 Portfolio</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">BIG7 + 10% CASH</p>
+        <h1>我的投資組合</h1>
+        <p id="updatedAt" class="muted">正在載入資料…</p>
+      </div>
+      <button id="refreshBtn" class="button secondary">更新股價</button>
+    </header>
+
+    <section class="summary-grid" aria-label="投資組合摘要">
+      <article class="metric"><span>目前總值</span><strong id="totalValue">—</strong></article>
+      <article class="metric"><span>目前損益</span><strong id="totalGain">—</strong><small id="totalReturn">—</small></article>
+      <article class="metric"><span>現金</span><strong id="cashValue">—</strong><small id="cashWeight">—</small></article>
+      <article class="metric"><span>再平衡狀態</span><strong id="rebalanceStatus">—</strong><small>偏離 3 個百分點時提示</small></article>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>持股明細</h2><p>金額單位：美元</p></div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>股票</th><th>股價</th><th>股數</th><th>目前總值</th><th>預定權重</th><th>目前比重</th><th>目前損益</th><th>報酬率</th></tr></thead>
+          <tbody id="portfolioBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>配置狀態</h2><p>依目前市值呈現；紅框代表偏離目標超過 3 個百分點。</p></div></div>
+      <div id="allocationBar" class="allocation-bar" aria-label="目前配置"></div>
+      <div id="allocationLegend" class="allocation-legend"></div>
+    </section>
+
+    <section class="card editor-card">
+      <div class="section-heading"><div><h2>輸入交易或再平衡</h2><p>買賣會自動更新股數、平均成本與現金，並寫入下方 Log。</p></div></div>
+      <form id="transactionForm" class="form-grid">
+        <label>日期<input id="tradeDate" type="date" required /></label>
+        <label>動作<select id="action" required><option value="BUY">買進</option><option value="SELL">賣出</option><option value="CASH_ADD">增加現金</option><option value="CASH_REMOVE">提領現金</option></select></label>
+        <label id="tickerField">股票<select id="ticker"><option>NVDA</option><option>MSFT</option><option>AVGO</option><option>GOOGL</option><option>AMZN</option><option>META</option><option>PLTR</option></select></label>
+        <label id="sharesField">股數<input id="shares" type="number" min="0" step="0.0001" /></label>
+        <label>交易總額（USD）<input id="totalAmount" type="number" min="0" step="0.01" required /></label>
+        <label class="wide">備註<input id="note" maxlength="300" placeholder="例如：AVGO 首次建倉、權重調整" /></label>
+        <div class="wide actions"><button class="button" type="submit">儲存並寫入 Log</button><button id="setCashBtn" class="button secondary" type="button">直接設定現金餘額</button></div>
+      </form>
+      <p id="formMessage" class="form-message" role="status"></p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>Rebalance Log</h2><p>初始持倉與之後所有買賣／現金異動。</p></div></div>
+      <div id="logList" class="log-list"></div>
+    </section>
+  </main>
+
+  <dialog id="authDialog">
+    <form method="dialog" class="dialog-form">
+      <h3>管理密碼</h3><p>只有寫入交易或手動更新股價時需要。</p>
+      <input id="adminToken" type="password" autocomplete="current-password" placeholder="輸入 ADMIN_TOKEN" />
+      <div class="actions"><button value="cancel" class="button secondary">取消</button><button id="saveTokenBtn" value="default" class="button">確認</button></div>
+    </form>
+  </dialog>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
