@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "big7-portfolio-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_id": "5ac15dd4-aab4-4d79-a501-8a48532489ca",
       "migrations_dir": "migrations"
     }
   ],
