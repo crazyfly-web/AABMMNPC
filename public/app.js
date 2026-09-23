@@ -9,8 +9,20 @@ const pct = n => `${Number(n||0).toFixed(2)}%`;
 async function api(path, options={}){
   const response = await fetch(path, options);
   const data = await response.json().catch(()=>({}));
-  if(!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if(!response.ok){
+    const error = new Error(data.error || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
+}
+
+function clearAdminTokenOnAuthError(error){
+  if(error?.status===401 || String(error?.message||'').includes('管理密碼')){
+    sessionStorage.removeItem('big7_admin_token');
+    return true;
+  }
+  return false;
 }
 
 async function load(){
@@ -89,21 +101,28 @@ $('transactionForm').addEventListener('submit',async e=>{
     const body={trade_date:$('tradeDate').value,action,ticker:action.startsWith('CASH')?null:$('ticker').value,shares:action.startsWith('CASH')?0:Number($('shares').value),total_amount:Number($('totalAmount').value),note:$('note').value};
     await api('/api/transactions',{method:'POST',headers:{'content-type':'application/json','x-admin-token':token},body:JSON.stringify(body)});
     $('formMessage').textContent='已儲存。'; $('shares').value='';$('totalAmount').value='';$('note').value=''; await load();
-  }catch(err){$('formMessage').textContent=err.message;if(err.message.includes('密碼'))sessionStorage.removeItem('big7_admin_token')}
+  }catch(err){$('formMessage').textContent=err.message;clearAdminTokenOnAuthError(err)}
   finally{button.disabled=false}
 });
 
 $('refreshBtn').addEventListener('click',async()=>{
   const token=await ensureToken();if(!token)return;
   $('refreshBtn').disabled=true;$('refreshBtn').textContent='更新中…';
-  try{const r=await api('/api/prices/refresh',{method:'POST',headers:{'x-admin-token':token}});if(r.errors?.length)alert(r.errors.join('\n'));await load()}catch(e){alert(e.message)}finally{$('refreshBtn').disabled=false;$('refreshBtn').textContent='更新股價'}
+  try{
+    const r=await api('/api/prices/refresh',{method:'POST',headers:{'x-admin-token':token}});
+    if(r.errors?.length) alert(`部分報價更新失敗（成功 ${r.updated}/${r.attempted||7}）：\n${r.errors.join('\n')}`);
+    await load();
+  }catch(e){
+    const cleared=clearAdminTokenOnAuthError(e);
+    alert(cleared?'管理密碼錯誤，已清除暫存密碼；請再次按「更新股價」重新輸入。':e.message);
+  }finally{$('refreshBtn').disabled=false;$('refreshBtn').textContent='更新股價'}
 });
 
 $('setCashBtn').addEventListener('click',async()=>{
   const current=portfolio?.summary?.cash||0; const value=prompt('輸入目前現金餘額（USD）',String(current));if(value===null)return;
   const amount=Number(value);if(!Number.isFinite(amount)||amount<0){alert('金額不正確');return}
   const token=await ensureToken();if(!token)return;
-  try{await api('/api/cash',{method:'POST',headers:{'content-type':'application/json','x-admin-token':token},body:JSON.stringify({amount})});await load()}catch(e){alert(e.message)}
+  try{await api('/api/cash',{method:'POST',headers:{'content-type':'application/json','x-admin-token':token},body:JSON.stringify({amount})});await load()}catch(e){clearAdminTokenOnAuthError(e);alert(e.message)}
 });
 
 load();
