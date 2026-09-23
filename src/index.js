@@ -28,8 +28,25 @@ export default {
     }
   },
 
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(refreshPrices(env));
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      const startedAt = new Date().toISOString();
+      try {
+        const result = await refreshPrices(env);
+        console.log('price refresh cron completed', JSON.stringify({
+          cron: event.cron,
+          started_at: startedAt,
+          ...result
+        }));
+      } catch (error) {
+        console.error('price refresh cron failed', JSON.stringify({
+          cron: event.cron,
+          started_at: startedAt,
+          error: error?.message || String(error)
+        }));
+        throw error;
+      }
+    })());
   }
 };
 
@@ -179,10 +196,12 @@ async function refreshPrices(env) {
   const now = new Date().toISOString();
   const updates = [];
   const errors = [];
+  const quotes = [];
 
   for (const ticker of TICKERS) {
     try {
       const quote = await fetchYahooQuote(ticker);
+      quotes.push({ ticker, ...quote });
       updates.push(env.DB.prepare(`
         INSERT INTO prices (ticker, price, price_date, fetched_at, source)
         VALUES (?, ?, ?, ?, 'Yahoo Finance')
@@ -198,7 +217,16 @@ async function refreshPrices(env) {
     updates.push(env.DB.prepare("UPDATE settings SET value=?, updated_at=? WHERE key='last_price_update'").bind(now, now));
     await env.DB.batch(updates);
   }
-  return { ok: errors.length === 0, updated: updates.length ? updates.length - 1 : 0, errors, fetched_at: now };
+
+  const priceDates = [...new Set(quotes.map(q => q.date))].sort();
+  return {
+    ok: errors.length === 0,
+    attempted: TICKERS.length,
+    updated: quotes.length,
+    errors,
+    price_dates: priceDates,
+    fetched_at: now
+  };
 }
 
 async function fetchYahooQuote(ticker) {
