@@ -322,12 +322,12 @@ function renderDrawdownCard(c){
     </div>
     <div class="drawdown-next">${next?`<span>下一級</span><strong>${next.label}：${next.threshold_pct}%</strong><small>距下一級 <b>${num(next.distance_pp,2)} 個百分點</b> · 下一級新增投入 ${num(next.allocation_pct,0)}%</small>`:'<span>下一級</span><strong>本輪預備金已全數配置</strong>'}</div>
     <div class="drawdown-trigger-strip"><span>本輪：</span>${triggered.map(x=>`<span class="trigger-pill ${x.triggered?'done':''}">${x.label} ${x.triggered?'✅':'—'}</span>`).join('')}</div>
-    <div class="drawdown-source"><span>Data: ${source.source_name||'Yahoo Finance'} · ${source.source_symbol||'—'}${proxy?' · PROXY':''}</span><span>歷史 ${Number(source.history_years||0).toFixed(1)} 年 · ${Number(source.history_rows||0).toLocaleString('en-US')} 日線</span>${c.last_error?`<span class="negative">最近更新警告：${c.last_error}</span>`:''}</div>
+    <div class="drawdown-source"><span>Data: ${source.source_name||'Yahoo Finance'} · ${source.source_symbol||'—'}${proxy?' · PROXY':''}</span><span>歷史 ${Number(source.history_years||0).toFixed(1)} 年 · ${Number(source.history_rows||0).toLocaleString('en-US')} 日線</span>${source.last_success_at?`<span>最後成功同步：${new Date(source.last_success_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',hour12:false})}（台灣時間）</span>`:''}${c.last_error?`<span class="negative">最近更新警告：${c.last_error}</span>`:''}</div>
   </article>`;
 }
 
 $('drawdownRefreshBtn').addEventListener('click',async()=>{
   const token=await ensureToken();if(!token)return;
   const btn=$('drawdownRefreshBtn');btn.disabled=true;btn.textContent='更新中…';
-  try{const r=await api('/api/drawdown/refresh',{method:'POST',headers:{'x-admin-token':token}});if(r.errors?.length)alert(`部分回撤資料未更新（${r.errors.length} 項），系統已保留最後有效資料。`);await loadDrawdown()}catch(e){alert(e.message)}finally{btn.disabled=false;btn.textContent='更新回撤資料'}
+  try{const r=await api('/api/drawdown/refresh',{method:'POST',headers:{'x-admin-token':token}});if(r.errors?.length)alert(`部分回撤資料未更新（${r.errors.length} 項），系統已保留最後有效資料。`);await loadDrawdown()}catch(e){if(e.message.includes('管理密碼')){sessionStorage.removeItem('big7_admin_token');alert('管理密碼錯誤，已清除舊密碼；再次按更新即可重新輸入。')}else alert(e.message)}finally{btn.disabled=false;btn.textContent='更新回撤資料'}
 });
