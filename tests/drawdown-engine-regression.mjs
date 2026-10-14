@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-  DRAWDOWN_CONFIG,currentLevel,crossedUntriggeredLevels,cumulativeAllocation,nextUntriggeredLevel,distanceToNextLevel,splitAdjustSeries,normalizePriceScaleSeries,findSuspiciousDiscontinuity,simulateDrawdownHistory,buildHistoryWindows,mergeHistoricalParts,historyDensityStats,historySourceIsSufficient
+  DRAWDOWN_CONFIG,currentLevel,crossedUntriggeredLevels,cumulativeAllocation,nextUntriggeredLevel,distanceToNextLevel,splitAdjustSeries,normalizePriceScaleSeries,findSuspiciousDiscontinuity,simulateDrawdownHistory,buildHistoryWindows,mergeHistoricalParts,historyDensityStats,historySourceIsSufficient,finalizedMarketBars,needsSameDayCorrection,replayCorrectedDrawdownDay
 } from '../src/drawdown-domain.js';
 
 const approx=(actual,expected,tol=0.02,msg='')=>assert.ok(Math.abs(actual-expected)<=tol,`${msg} expected ${expected}, got ${actual}`);
@@ -134,6 +134,39 @@ assert.equal(historySourceIsSufficient({densityOk:true,coverageYears:16,inceptio
 assert.equal(historySourceIsSufficient({densityOk:true,coverageYears:17.7,inceptionComplete:true}),true); // 0050
 assert.equal(historySourceIsSufficient({densityOk:true,coverageYears:16,inceptionComplete:false}),false);
 assert.equal(historySourceIsSufficient({densityOk:false,coverageYears:30,inceptionComplete:true}),false);
+
+// Provisional candles must not enter the persisted closing-price ladder.
+const recentBars=[{date:'2026-10-13',close:100},{date:'2026-10-14',close:99}];
+assert.deepEqual(finalizedMarketBars(recentBars,'US',new Date('2026-10-14T19:30:00Z')).map(x=>x.date),['2026-10-13']); // 15:30 EDT
+assert.deepEqual(finalizedMarketBars(recentBars,'US',new Date('2026-10-14T21:01:00Z')).map(x=>x.date),['2026-10-13','2026-10-14']); // 17:01 EDT
+assert.deepEqual(finalizedMarketBars([{date:'2026-12-14',close:99}],'US',new Date('2026-12-14T21:30:00Z')),[]); // 16:30 EST
+assert.equal(finalizedMarketBars([{date:'2026-12-14',close:99}],'US',new Date('2026-12-14T22:01:00Z')).length,1); // 17:01 EST
+assert.deepEqual(finalizedMarketBars(recentBars,'TW',new Date('2026-10-14T05:55:00Z')).map(x=>x.date),['2026-10-13']); // 13:55 TST
+assert.equal(finalizedMarketBars(recentBars,'TW',new Date('2026-10-14T06:06:00Z')).length,2); // 14:06 TST
+assert.equal(finalizedMarketBars([{date:'2026-10-15',close:99}],'US',new Date('2026-10-14T22:00:00Z')).length,0); // future candle
+
+// A revised close with the SAME trade date must trigger correction.
+assert.equal(needsSameDayCorrection({trade_date:'2026-10-14',close:532.41},[{date:'2026-10-14',close:519.42}]),true);
+assert.equal(needsSameDayCorrection({trade_date:'2026-10-14',close:532.41},[{date:'2026-10-14',close:532.41}]),false);
+assert.equal(needsSameDayCorrection({trade_date:'2026-10-14',close:532.41},[{date:'2026-10-13',close:519.42}]),false);
+
+// Replay from the previous day, preserving historical triggers and cycle low.
+const previous={ath:100,ath_date:'2026-01-01',cycle_low:80,cycle_low_date:'2026-01-02',max_cycle_drawdown_pct:-20};
+let corrected=replayCorrectedDrawdownDay('SOXX',previous,'2026-01-03',79,['BUY1']);
+approx(corrected.current_drawdown_pct,-21);
+assert.equal(corrected.newCycle,false);assert.equal(corrected.newHits.length,0);
+assert.equal(corrected.cumulative_allocation_pct,10);
+corrected=replayCorrectedDrawdownDay('SOXX',previous,'2026-01-03',75,['BUY1']);
+approx(corrected.current_drawdown_pct,-25);
+assert.deepEqual(corrected.newHits.map(x=>x.id),['BUY2']);
+assert.equal(corrected.cumulative_allocation_pct,25);
+assert.equal(corrected.cycle_low,75);
+corrected=replayCorrectedDrawdownDay('SOXX',previous,'2026-01-03',105,['BUY1']);
+assert.equal(corrected.newCycle,true);assert.equal(corrected.ath,105);
+assert.equal(corrected.cumulative_allocation_pct,0);
+corrected=replayCorrectedDrawdownDay('SOXX',previous,'2026-01-03',88,['BUY1']);
+assert.equal(corrected.current_level,'RECOVERED');assert.equal(corrected.cycle_low,80);
+assert.equal(corrected.cumulative_allocation_pct,10);
 
 console.log('PASS: Drawdown Engine regression tests');
 console.log('ATH / gap / recovery / revisit / new ATH reset / cycle-low recovery / split / reverse split / threshold boundaries all passed.');
