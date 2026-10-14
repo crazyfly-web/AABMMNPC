@@ -56,6 +56,30 @@ export function getDrawdownConfig(assetId){
   return cfg;
 }
 
+// A daily Yahoo candle is provisional until the local market has closed and
+// the provider has had time to publish its final close. Cloudflare cron is UTC.
+export function finalizedMarketBars(bars,market,now=new Date()){
+  const zone=market==='US'?'America/New_York':market==='TW'?'Asia/Taipei':null;
+  if(!zone)throw new Error(`Unknown drawdown market: ${market}`);
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{
+    timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+  }).formatToParts(now).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  const today=`${parts.year}-${parts.month}-${parts.day}`;
+  const minutes=Number(parts.hour)*60+Number(parts.minute);
+  // US 17:00 ET (after 16:00 close); TW 14:05 (after 13:30 close).
+  const finalized=minutes>=(market==='US'?17*60:14*60+5);
+  return (bars||[]).filter(x=>x.date<today||(x.date===today&&finalized));
+}
+
+// Yahoo can revise a candle without changing its trading date. A full replay
+// is required so ATH, cycle lows and BUY-trigger history remain consistent.
+export function needsSameDayCorrection(state,bars){
+  const matching=(bars||[]).find(x=>x.date===state?.trade_date);
+  return Boolean(matching&&Number.isFinite(Number(matching.close))&&
+    Math.abs(Number(matching.close)-Number(state.close))>=0.005);
+}
+
 export function currentLevel(assetId, drawdownPct){
   const cfg=getDrawdownConfig(assetId);
   let hit=null;
