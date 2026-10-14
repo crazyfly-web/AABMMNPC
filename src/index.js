@@ -244,7 +244,7 @@ async function recordDrawdownSourceError(env,assetId,message){
 // D1.batch runs the state, cycle and trigger updates as one transaction.
 async function correctDrawdownSameDay(env,assetId,state,correctedBar,latestChart){
   const previous=await env.DB.prepare('SELECT * FROM drawdown_daily WHERE asset_id=? AND trade_date<? ORDER BY trade_date DESC LIMIT 1').bind(assetId,state.trade_date).first();
-  if(!previous)return initializeDrawdownAsset(env,assetId,{reason:'corrected-close-history-replay',latestChart});
+  if(!previous)return initializeDrawdownAsset(env,assetId,{reason:'corrected-close-history-replay',latestChart,latestSymbol:(await env.DB.prepare('SELECT source_symbol FROM drawdown_sources WHERE asset_id=?').bind(assetId).first())?.source_symbol});
   const previousCycleId=Number(previous.cycle_id),currentCycleId=Number(state.cycle_id);
   const previousCycle=await env.DB.prepare('SELECT id FROM drawdown_cycles WHERE id=? AND asset_id=?').bind(previousCycleId,assetId).first();
   if(!previousCycle)throw new Error('找不到前一交易日回撤週期，已停止修正以保護紀錄');
@@ -352,11 +352,12 @@ async function refreshDrawdownAsset(env,assetId){
   return{asset_id:assetId,updated:true,trade_date:current.trade_date,current_drawdown_pct:current.current_drawdown_pct,current_level:current.current_level};
 }
 
-async function initializeDrawdownAsset(env,assetId,{reason='initial',latestChart=null}={}){
+async function initializeDrawdownAsset(env,assetId,{reason='initial',latestChart=null,latestSymbol=null}={}){
   const selected=await selectDrawdownHistory(assetId);
-  // The long-history fetch can be cached for 24h. Merge a fresh short chart
-  // so a corrected close overrides any provisional candle in that cache.
-  const combined=latestChart?mergeHistoricalParts([selected.chart,latestChart]):selected.chart;
+  // The long-history fetch can be cached for 24h. Always overlay a fresh
+  // short chart from the SAME ticker to avoid cached provisional closes.
+  const fresh=latestChart&&selected.symbol===latestSymbol?latestChart:await fetchYahooChart(selected.symbol,{range:'3mo',cacheTtl:60});
+  const combined=mergeHistoricalParts([selected.chart,fresh]);
   const normalized=normalizePriceScaleSeries(combined.bars,combined.splits);
   const adjusted=finalizedMarketBars(normalized.bars.map(x=>({date:x.date,close:x.close_split_adjusted})),getDrawdownConfig(assetId).market);
   if(!adjusted.length)throw new Error('市場尚未收盤，沒有可確認的收盤價');
