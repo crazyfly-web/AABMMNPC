@@ -1,0 +1,1 @@
+ALTER TABLE prices ADD COLUMN ytd_return_pct REAL NOT NULL DEFAULT 0;

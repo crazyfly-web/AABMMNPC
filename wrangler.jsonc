@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "big7-portfolio",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-31",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "big7-portfolio-db",
+      "database_id": "5ac15dd4-aab4-4d79-a501-8a48532489ca",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["5 6 * * 1-5", "30 22 * * 1-5"]
+  },
+  "vars": {
+    "APP_TIMEZONE": "Asia/Taipei"
+  }
+}

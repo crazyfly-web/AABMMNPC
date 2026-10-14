@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Capital OS · Big7 + Momentum 8 + Drawdown</title>
+  <link rel="stylesheet" href="/styles.css?v=2.8.2" />
+</head>
+<body>
+  <main class="shell">
+    <nav class="app-tabs" aria-label="Capital OS 頁面">
+      <button class="app-tab active" data-tab="radar">動能雷達</button>
+      <button class="app-tab" data-tab="wealth">我的資產</button>
+      <button class="app-tab" data-tab="drawdown">回撤加碼</button>
+    </nav>
+    <div id="radarPage" class="tab-page active">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">CAPITAL OS · BIG7 + MOMENTUM 8</p>
+        <h1>我的投資作業系統 <span class="app-version">· v2.8.2</span></h1>
+        <p id="updatedAt" class="muted">正在載入資料…</p>
+        <div id="dataHealth" class="data-health" aria-label="資料狀態"></div>
+      </div>
+      <div class="radar-actions"><button id="radarPrivacyBtn" class="button secondary" type="button">👁 隱私模式</button><button id="refreshBtn" class="button secondary">更新股價</button></div>
+    </header>
+
+    <section class="summary-grid" aria-label="投資組合摘要">
+      <article class="metric"><span>目前總值</span><strong id="totalValue">—</strong></article>
+      <article class="metric"><span>股票總報酬（不含現金）</span><strong id="totalGain">—</strong><small id="totalReturn">—</small></article>
+      <article class="metric"><span>現金</span><strong id="cashValue">—</strong><small id="cashWeight">—</small></article>
+      <article class="metric"><span>再平衡狀態</span><strong id="rebalanceStatus">—</strong><small>偏離 3 個百分點時提示</small></article>
+    </section>
+
+
+    <section class="card momentum-card" id="momentumSection">
+      <div class="section-heading momentum-heading"><div><p class="eyebrow">MARKET INTELLIGENCE</p><h2>Momentum 8 動能雷達</h2><p>Big7 + MU 候補股；每日收盤後自動計算動能、進場品質與相對 QQQ 強弱。</p><a class="button secondary momentum-manual-link" href="/docs/Big7_v2.5_Momentum8_使用說明.pdf" target="_blank" rel="noopener">📘 動能雷達使用說明</a></div><div class="portfolio-momentum"><span>Big7 組合動能</span><strong id="portfolioMomentum">—</strong><small id="portfolioMomentumTrail" class="momentum-trail">—</small><small id="momentumDate">—</small></div></div>
+      <div id="momentumHeatmap" class="momentum-heatmap"></div>
+      <div class="brief-box"><span>DAILY MOMENTUM BRIEF</span><p id="momentumBrief">正在載入動能資料…</p></div>
+      <div class="table-wrap"><table class="momentum-table"><thead><tr><th>排名</th><th>股票</th><th>股價</th><th>Momentum</th><th>Trend</th><th>Entry</th><th>狀態</th><th>RSV</th><th>K</th><th>D</th><th>20MA</th><th>60MA</th><th>距20MA</th><th>量比</th><th>RS 20D vs QQQ</th></tr></thead><tbody id="momentumBody"></tbody></table></div>
+      <p class="table-note">Momentum 衡量趨勢、相對強弱、突破、量價與週期動能；Entry 衡量目前位置與追價風險。分數為規則化觀察工具，不是自動買賣訊號。</p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>今日優先加碼</h2><p>依照 100 萬台幣、匯率 30 換算的目標投入額排序。</p></div></div>
+      <div id="priorityList" class="priority-list"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>持股明細</h2><p>金額單位：美元；尚需投入以成本基礎對照目標投入額。</p></div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>股票</th><th>股價</th><th>YTD</th><th>平均成本</th><th>股數</th><th>目前損益</th><th>累積報酬率</th><th>目前總值</th><th>預定權重</th><th>目前比重</th><th>目標投入</th><th>尚需投入</th></tr></thead>
+          <tbody id="portfolioBody"></tbody>
+        </table>
+      </div>
+      <p class="table-note">累積報酬率依個人平均成本計算；YTD 為該股票今年第一個交易日至最新收盤日的價格報酬。</p>
+      <div class="stock-total" aria-label="股票整體績效，不含現金">
+        <div><span>股票投入成本</span><strong id="stockCost">—</strong></div>
+        <div><span>股票目前總值</span><strong id="stockValue">—</strong></div>
+        <div><span>股票總報酬</span><strong id="stockGain">—</strong></div>
+        <div><span>股票總報酬率</span><strong id="stockReturn">—</strong></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>配置狀態</h2><p>依目前市值呈現；紅框代表偏離目標超過 3 個百分點。</p></div></div>
+      <div id="allocationBar" class="allocation-bar" aria-label="目前配置"></div>
+      <div id="allocationLegend" class="allocation-legend"></div>
+    </section>
+
+    <section class="card editor-card">
+      <div class="section-heading"><div><h2>輸入交易或再平衡</h2><p>買賣會自動更新股數、平均成本與現金，並寫入下方 Log。</p></div></div>
+      <form id="transactionForm" class="form-grid">
+        <label>日期<input id="tradeDate" type="date" required /></label>
+        <label>動作<select id="action" required><option value="BUY">買進</option><option value="SELL">賣出</option><option value="CASH_ADD">增加現金</option><option value="CASH_REMOVE">提領現金</option></select></label>
+        <label id="tickerField">股票<select id="ticker"><option>NVDA</option><option>MSFT</option><option>AVGO</option><option>GOOGL</option><option>AMZN</option><option>META</option><option>PLTR</option></select></label>
+        <label id="sharesField">股數<input id="shares" type="number" min="0" step="0.0001" /></label>
+        <label>交易總額（USD）<input id="totalAmount" type="number" min="0" step="0.01" required /></label>
+        <label class="wide">備註<input id="note" maxlength="300" placeholder="例如：AVGO 首次建倉、權重調整" /></label>
+        <div class="wide actions"><button class="button" type="submit">儲存並寫入 Log</button><button id="setCashBtn" class="button secondary" type="button">直接設定現金餘額</button></div>
+      </form>
+      <p id="formMessage" class="form-message" role="status"></p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading"><div><h2>Rebalance Log</h2><p>初始持倉與之後所有買賣／現金異動。</p></div></div>
+      <div id="logList" class="log-list"></div>
+    </section>
+    </div>
+
+    <div id="wealthPage" class="tab-page">
+      <header class="wealth-hero">
+        <div><p class="eyebrow">WEALTH DASHBOARD</p><h1>我的資產</h1><p id="wealthUpdatedAt" class="muted">正在載入資產資料…</p></div>
+        <div class="wealth-hero-actions"><button id="wealthPrivacyBtn" class="button secondary" type="button">👁 隱藏金額</button><button id="wealthRefreshBtn" class="button secondary">更新資產收盤價</button></div>
+      </header>
+
+      <section class="wealth-summary">
+        <article class="metric hero-metric wealth-primary-card"><span>目前總資產</span><strong id="wealthTotal" class="wealth-primary-value">—</strong><small id="wealthTotalGain" class="wealth-gain-block">—</small></article>
+        <article class="metric wealth-primary-card"><span>財富自由目標</span><strong id="freedomTarget" class="wealth-primary-value">—</strong><small id="freedomRemaining" class="wealth-remaining">—</small></article>
+        <article class="metric"><span>完成度</span><strong id="freedomPct">—</strong><div class="goal-track"><i id="goalProgress"></i></div></article>
+        <article class="metric fx-metric"><span>美元兌台幣</span><strong id="fxRate">—</strong><small id="fxDate">—</small><span class="jpy-fx-label">日圓兌台幣</span><strong id="jpyFxRate" class="jpy-fx-rate">—</strong><small id="jpyFxDate">—</small></article>
+      </section>
+
+      <section class="card chart-card">
+        <div class="section-heading"><div><h2>資產成長</h2><p>每日正式收盤快照；總資產與累積投入分開呈現。</p></div></div>
+        <div id="wealthChart" class="wealth-chart"></div>
+      </section>
+
+      <section class="wealth-two-col">
+        <article class="card"><div class="section-heading"><div><h2>資產配置</h2><p>台股、美股與現金占總資產比例。</p></div></div><div id="wealthAllocation" class="donut-layout"></div></article>
+        <article class="card"><div class="section-heading"><div><h2>績效摘要</h2><p>股票價格與匯率影響分開檢視。</p></div></div><div id="wealthPerformance" class="performance-grid"></div></article>
+      </section>
+
+      <section class="card"><div class="section-heading inventory-heading"><div><div class="inventory-title-line"><h2>台股庫存</h2><div id="twInventoryStats" class="inventory-stats">—</div></div><p>成本與現值皆以新台幣呈現；收盤價優先取自 TWSE 官方資料。</p></div></div><div class="table-wrap"><table><thead><tr><th>券商 / 標的</th><th>股數</th><th>投入成本</th><th>現價</th><th>現值</th><th>累計損益</th><th>累計報酬</th><th>資料日</th></tr></thead><tbody id="twWealthBody"></tbody></table></div></section>
+
+      <section class="card"><div class="section-heading inventory-heading"><div><div class="inventory-title-line"><h2>美股庫存</h2><div id="usInventoryStats" class="inventory-stats">—</div></div><p>同時保留美元投資績效與台幣真實報酬；台幣現值以目前 USD/TWD 換算。</p></div></div><div class="table-wrap"><table><thead><tr><th>券商 / 標的</th><th>股數</th><th>投入 USD</th><th>市值 USD</th><th>USD 報酬</th><th>實際投入 TWD</th><th>目前 TWD</th><th>TWD 報酬</th><th>匯率影響</th></tr></thead><tbody id="usWealthBody"></tbody></table></div></section>
+
+      <section class="card editor-card"><div class="section-heading"><div><h2>投資流水帳</h2><p>每一筆都有日期並可修改。v2.4 已輸入的庫存會自動轉成「期初庫存」紀錄，不會消失。</p></div></div>
+        <form id="wealthTransactionForm" class="form-grid wealth-form">
+          <input id="wealthEditId" type="hidden" />
+          <label>日期<input id="wealthTradeDate" type="date" required /></label>
+          <label>類型<select id="wealthTxType"><option value="BUY">買入</option><option value="SELL">賣出</option><option value="DIVIDEND">配息</option><option value="OPENING">期初庫存 / 修正既有</option></select></label>
+          <label>市場<select id="wealthMarket"><option value="TW">台股</option><option value="US">美股</option></select></label>
+          <label>券商<input id="wealthBroker" required placeholder="國泰 / 元大" /></label>
+          <label>代號<input id="wealthTicker" required placeholder="0050 / NVDA" /></label>
+          <label>名稱<input id="wealthName" placeholder="元大台灣50 / NVIDIA" /></label>
+          <label id="wealthSharesLabel">股數<input id="wealthShares" type="number" min="0" step="0.0001" /></label>
+          <label id="wealthNativeLabel">金額（原幣）<input id="wealthCostNative" type="number" min="0" step="0.01" /></label>
+          <label id="wealthTwdLabel">實際金額（TWD）<input id="wealthCostTwd" type="number" min="0" step="0.01" /></label>
+          <label class="wide">備註<input id="wealthNote" maxlength="300" placeholder="例如：國泰複委託、部分賣出、稅後股息" /></label>
+          <div class="wide actions"><button id="wealthSaveTxBtn" class="button" type="submit">新增紀錄</button><button id="wealthCancelEditBtn" class="button secondary" type="button" hidden>取消修改</button><button id="wealthSettingsBtn" class="button secondary" type="button">財富目標 / 現金設定</button></div>
+        </form><p id="wealthFormMessage" class="form-message"></p>
+      </section>
+
+      <section class="card"><div class="section-heading"><div><h2>投資紀錄</h2><p>買入、賣出與配息完整留存；可修改或刪除錯誤紀錄，系統會重新計算庫存。</p></div></div><div class="table-wrap"><table class="wealth-ledger-table"><thead><tr><th>日期</th><th>類型</th><th>券商 / 標的</th><th>股數</th><th>原幣金額</th><th>實際 TWD</th><th>備註</th><th></th></tr></thead><tbody id="wealthLedgerBody"></tbody></table></div></section>
+    </div>
+
+    <div id="drawdownPage" class="tab-page">
+      <header class="drawdown-hero">
+        <div><p class="eyebrow">LONG-TERM CORE · DRAWDOWN BUY LADDER</p><h1>回撤加碼</h1><p class="muted">以歷史最高收盤價為基準，追蹤實際加碼商品 0050 / VOO / QQQ / SOXX 的分批加碼位置。每日 Trigger 看 ETF 本身；長期市場指數只用於規則校準。Price Drawdown，不含現金股息。</p></div>
+        <button id="drawdownRefreshBtn" class="button secondary" type="button">更新回撤資料</button>
+      </header>
+      <section id="drawdownAlerts" class="drawdown-alerts" aria-live="polite"></section>
+      <section id="drawdownGrid" class="drawdown-grid" aria-label="回撤加碼四標的摘要">
+        <article class="card drawdown-placeholder">正在載入 0050 / VOO / QQQ / SOXX…</article>
+      </section>
+      <section class="card drawdown-note">
+        <div class="section-heading drawdown-rule-heading">
+          <div><h2>建議加碼規則</h2><p>每一級比例都以該標的預先保留的「額外加碼預備金 = 100%」為基準；不是總資產配置比例。</p></div>
+          <a class="button secondary drawdown-manual-link" href="/docs/Big7_v2.8.0_Drawdown_%E5%9B%9E%E6%92%A4%E5%8A%A0%E7%A2%BC%E8%A6%8F%E5%89%87%E8%AA%AA%E6%98%8E%E6%9B%B8.pdf" target="_blank" rel="noopener">📘 開啟回撤加碼規則說明書</a>
+        </div>
+        <p class="table-note">新的 Closing ATH 會建立新 Drawdown Cycle 並重新 armed。已觸發的 BUY level 即使之後反彈也不會在同一 cycle 重複觸發。距下一級以「個百分點」顯示。</p>
+        <div class="drawdown-manual-summary">
+          <strong>說明書內容</strong>
+          <span>0050 / VOO / QQQ / SOXX 完整 BUY / CRISIS / EXTREME 階梯與預備金配置</span>
+          <span>Closing ATH、Cycle Low、Recovery、首次穿越與 New ATH reset 邏輯</span>
+          <span>兩層架構：歷史 Benchmark 用來校準門檻；0050 / VOO / QQQ / SOXX 自身收盤價負責每日 Trigger</span>
+          <span>split-only price normalization、資料品質閘門，以及 0050 / SOXX 實例</span>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="authDialog">
+    <form method="dialog" class="dialog-form">
+      <h3>管理密碼</h3><p>只有寫入交易或手動更新股價時需要。</p>
+      <input id="adminToken" type="password" autocomplete="current-password" placeholder="輸入 ADMIN_TOKEN" />
+      <div class="actions"><button value="cancel" class="button secondary">取消</button><button id="saveTokenBtn" value="default" class="button">確認</button></div>
+    </form>
+  </dialog>
+
+  <script src="/app.js?v=2.8.2" defer></script>
+</body>
+</html>
