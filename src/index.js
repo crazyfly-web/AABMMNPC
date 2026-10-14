@@ -1,4 +1,4 @@
-import { DRAWDOWN_CONFIG, getDrawdownConfig, currentLevel, crossedUntriggeredLevels, cumulativeAllocation, nextUntriggeredLevel, distanceToNextLevel, splitAdjustSeries, normalizePriceScaleSeries, findSuspiciousDiscontinuity, historyCoverageYears, simulateDrawdownHistory, mergeHistoricalParts, buildHistoryWindows, historyDensityStats, historySourceIsSufficient } from './drawdown-domain.js';
+import { DRAWDOWN_CONFIG, getDrawdownConfig, currentLevel, crossedUntriggeredLevels, cumulativeAllocation, nextUntriggeredLevel, distanceToNextLevel, splitAdjustSeries, normalizePriceScaleSeries, findSuspiciousDiscontinuity, historyCoverageYears, simulateDrawdownHistory, mergeHistoricalParts, buildHistoryWindows, historyDensityStats, historySourceIsSufficient, finalizedMarketBars, needsSameDayCorrection, replayCorrectedDrawdownDay } from './drawdown-domain.js';
 const TICKERS = ['NVDA', 'MSFT', 'AVGO', 'GOOGL', 'AMZN', 'META', 'PLTR'];
 const MOMENTUM_TICKERS = [...TICKERS, 'MU'];
 const BENCHMARK = 'QQQ';
@@ -240,6 +240,49 @@ async function recordDrawdownSourceError(env,assetId,message){
   await env.DB.prepare(`INSERT INTO drawdown_sources (asset_id,label,source_symbol,source_name,is_proxy,last_error) VALUES (?,?,?,'Yahoo Finance',0,?) ON CONFLICT(asset_id) DO UPDATE SET last_error=excluded.last_error`).bind(assetId,cfg.label,src.preferred,String(message).slice(0,500)).run();
 }
 
+// Reconcile a corrected final close without deleting historical daily snapshots.
+// D1.batch runs the state, cycle and trigger updates as one transaction.
+async function correctDrawdownSameDay(env,assetId,state,correctedBar,latestChart){
+  const previous=await env.DB.prepare('SELECT * FROM drawdown_daily WHERE asset_id=? AND trade_date<? ORDER BY trade_date DESC LIMIT 1').bind(assetId,state.trade_date).first();
+  if(!previous)return initializeDrawdownAsset(env,assetId,{reason:'corrected-close-history-replay',latestChart});
+  const previousCycleId=Number(previous.cycle_id),currentCycleId=Number(state.cycle_id);
+  const previousCycle=await env.DB.prepare('SELECT id FROM drawdown_cycles WHERE id=? AND asset_id=?').bind(previousCycleId,assetId).first();
+  if(!previousCycle)throw new Error('找不到前一交易日回撤週期，已停止修正以保護紀錄');
+  const priorTriggers=(await env.DB.prepare('SELECT level_id FROM drawdown_triggers WHERE cycle_id=? AND trigger_date<?').bind(previousCycleId,state.trade_date).all()).results.map(x=>x.level_id);
+  const oldAlerts=(await env.DB.prepare('SELECT * FROM drawdown_alerts WHERE asset_id=? AND trigger_date=?').bind(assetId,state.trade_date).all()).results;
+  const oldAlertByLevel=new Map(oldAlerts.map(x=>[x.level_id,x]));
+  const corrected=replayCorrectedDrawdownDay(assetId,previous,state.trade_date,correctedBar.close,priorTriggers);
+  const now=new Date().toISOString(),statements=[];
+  if(currentCycleId!==previousCycleId){
+    // The provisional candle created a new ATH cycle. Remove only that day's cycle.
+    statements.push(env.DB.prepare('DELETE FROM drawdown_alerts WHERE cycle_id=?').bind(currentCycleId));
+    statements.push(env.DB.prepare('DELETE FROM drawdown_triggers WHERE cycle_id=?').bind(currentCycleId));
+    statements.push(env.DB.prepare('DELETE FROM drawdown_cycles WHERE id=? AND asset_id=?').bind(currentCycleId,assetId));
+  }
+  statements.push(env.DB.prepare('DELETE FROM drawdown_alerts WHERE cycle_id=? AND trigger_date=?').bind(previousCycleId,state.trade_date));
+  statements.push(env.DB.prepare('DELETE FROM drawdown_triggers WHERE cycle_id=? AND trigger_date=?').bind(previousCycleId,state.trade_date));
+  let cycleExpr='?';
+  const dailyValues=[corrected.close,corrected.ath,corrected.ath_date,corrected.current_drawdown_pct,corrected.cycle_low,corrected.cycle_low_date,corrected.max_cycle_drawdown_pct,corrected.recovery_from_low_pct,corrected.current_level,corrected.cumulative_allocation_pct];
+  if(corrected.newCycle){
+    statements.push(env.DB.prepare('UPDATE drawdown_cycles SET ended_at=?,is_active=0,ath=?,ath_date=?,cycle_low=?,cycle_low_date=?,max_drawdown_pct=? WHERE id=?').bind(state.trade_date,previous.ath,previous.ath_date,previous.cycle_low,previous.cycle_low_date,previous.max_cycle_drawdown_pct,previousCycleId));
+    statements.push(env.DB.prepare('INSERT INTO drawdown_cycles (asset_id,ath,ath_date,cycle_low,cycle_low_date,max_drawdown_pct,started_at,is_active) VALUES (?,?,?,?,?,?,?,1)').bind(assetId,corrected.ath,corrected.ath_date,corrected.cycle_low,corrected.cycle_low_date,0,state.trade_date));
+    cycleExpr='(SELECT id FROM drawdown_cycles WHERE asset_id=? AND is_active=1 ORDER BY id DESC LIMIT 1)';
+    dailyValues.push(assetId);
+  }else{
+    statements.push(env.DB.prepare('UPDATE drawdown_cycles SET ended_at=NULL,is_active=1,ath=?,ath_date=?,cycle_low=?,cycle_low_date=?,max_drawdown_pct=? WHERE id=?').bind(corrected.ath,corrected.ath_date,corrected.cycle_low,corrected.cycle_low_date,corrected.max_cycle_drawdown_pct,previousCycleId));
+    dailyValues.push(previousCycleId);
+    for(const hit of corrected.newHits){
+      const alert=oldAlertByLevel.get(hit.id);
+      statements.push(env.DB.prepare('INSERT INTO drawdown_triggers (cycle_id,asset_id,level_id,threshold_pct,allocation_pct,trigger_date,trigger_close,trigger_drawdown_pct,created_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(previousCycleId,assetId,hit.id,hit.threshold,hit.allocationPct,state.trade_date,corrected.close,corrected.current_drawdown_pct,alert?.created_at||now));
+      statements.push(env.DB.prepare('INSERT INTO drawdown_alerts (asset_id,cycle_id,level_id,trigger_date,trigger_drawdown_pct,allocation_pct,cumulative_allocation_pct,created_at) VALUES (?,?,?,?,?,?,?,?)').bind(assetId,previousCycleId,hit.id,state.trade_date,corrected.current_drawdown_pct,hit.allocationPct,cumulativeAllocation(assetId,[...priorTriggers,...corrected.newHits.filter(x=>x.threshold>=hit.threshold).map(x=>x.id)]),alert?.created_at||now));
+    }
+  }
+  statements.push(env.DB.prepare('UPDATE drawdown_daily SET close=?,ath=?,ath_date=?,current_drawdown_pct=?,cycle_low=?,cycle_low_date=?,max_cycle_drawdown_pct=?,recovery_from_low_pct=?,current_level=?,cumulative_allocation_pct=?,cycle_id='+cycleExpr+',captured_at=? WHERE asset_id=? AND trade_date=?').bind(...dailyValues,now,assetId,state.trade_date));
+  statements.push(env.DB.prepare("UPDATE drawdown_sources SET latest_date=?,last_success_at=?,last_error='' WHERE asset_id=?").bind(state.trade_date,now,assetId));
+  await env.DB.batch(statements);
+  return{asset_id:assetId,updated:true,corrected:true,trade_date:state.trade_date,previous_close:Number(state.close),close:corrected.close,current_drawdown_pct:corrected.current_drawdown_pct,current_level:corrected.current_level};
+}
+
 async function refreshDrawdownAsset(env,assetId){
   let source=await env.DB.prepare('SELECT * FROM drawdown_sources WHERE asset_id=?').bind(assetId).first();
   let state=await env.DB.prepare('SELECT * FROM drawdown_daily WHERE asset_id=? ORDER BY trade_date DESC LIMIT 1').bind(assetId).first();
@@ -255,9 +298,18 @@ async function refreshDrawdownAsset(env,assetId){
   const recentNormalized=normalizePriceScaleSeries(chart.bars,chart.splits);
   const recentAdjusted=recentNormalized.bars.map(x=>({...x,close:x.close_split_adjusted}));
   const suspicious=findSuspiciousDiscontinuity(recentAdjusted);if(suspicious)throw new Error(`疑似未調整 split / 價格斷層：${suspicious.date} ${suspicious.change_pct.toFixed(1)}%`);
-  const adjusted=recentAdjusted.filter(x=>x.date>state.trade_date);
+  const finalized=finalizedMarketBars(recentAdjusted,getDrawdownConfig(assetId).market);
+  if(needsSameDayCorrection(state,finalized)){
+    const correctedBar=finalized.find(x=>x.date===state.trade_date);
+    const correction=await correctDrawdownSameDay(env,assetId,state,correctedBar,chart);
+    if(finalized.some(x=>x.date>state.trade_date))return refreshDrawdownAsset(env,assetId);
+    return correction;
+  }
+  const adjusted=finalized.filter(x=>x.date>state.trade_date);
   if(!adjusted.length){
-    await env.DB.prepare(`UPDATE drawdown_sources SET latest_date=?,last_success_at=?,last_error='' WHERE asset_id=?`).bind(chart.bars.at(-1).date,new Date().toISOString(),assetId).run();
+    if(!finalized.length||finalized.at(-1).date<state.trade_date)
+      return{asset_id:assetId,updated:false,stale:true,reason:'waiting-for-final-close',trade_date:state.trade_date};
+    await env.DB.prepare(`UPDATE drawdown_sources SET latest_date=?,last_success_at=?,last_error='' WHERE asset_id=?`).bind(state.trade_date,new Date().toISOString(),assetId).run();
     return{asset_id:assetId,updated:false,stale:true,trade_date:state.trade_date};
   }
   let activeCycle={...cycle},triggered=new Set((await env.DB.prepare('SELECT level_id FROM drawdown_triggers WHERE cycle_id=?').bind(activeCycle.id).all()).results.map(r=>r.level_id));
@@ -300,8 +352,14 @@ async function refreshDrawdownAsset(env,assetId){
   return{asset_id:assetId,updated:true,trade_date:current.trade_date,current_drawdown_pct:current.current_drawdown_pct,current_level:current.current_level};
 }
 
-async function initializeDrawdownAsset(env,assetId,{reason='initial'}={}){
-  const selected=await selectDrawdownHistory(assetId),normalized=normalizePriceScaleSeries(selected.chart.bars,selected.chart.splits),adjusted=normalized.bars.map(x=>({date:x.date,close:x.close_split_adjusted}));
+async function initializeDrawdownAsset(env,assetId,{reason='initial',latestChart=null}={}){
+  const selected=await selectDrawdownHistory(assetId);
+  // The long-history fetch can be cached for 24h. Merge a fresh short chart
+  // so a corrected close overrides any provisional candle in that cache.
+  const combined=latestChart?mergeHistoricalParts([selected.chart,latestChart]):selected.chart;
+  const normalized=normalizePriceScaleSeries(combined.bars,combined.splits);
+  const adjusted=finalizedMarketBars(normalized.bars.map(x=>({date:x.date,close:x.close_split_adjusted})),getDrawdownConfig(assetId).market);
+  if(!adjusted.length)throw new Error('市場尚未收盤，沒有可確認的收盤價');
   const suspicious=findSuspiciousDiscontinuity(adjusted);if(suspicious)throw new Error(`疑似未調整 split / 價格斷層：${suspicious.date} ${suspicious.change_pct.toFixed(1)}%`);
   const simulation=simulateDrawdownHistory(assetId,adjusted),now=new Date().toISOString(),cfg=getDrawdownConfig(assetId);
   await env.DB.batch([
