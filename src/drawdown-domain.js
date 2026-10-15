@@ -56,6 +56,56 @@ export function getDrawdownConfig(assetId){
   return cfg;
 }
 
+// A daily Yahoo candle is provisional until the local market has closed and
+// the provider has had time to publish its final close. Cloudflare cron is UTC.
+export function finalizedMarketBars(bars,market,now=new Date()){
+  const zone=market==='US'?'America/New_York':market==='TW'?'Asia/Taipei':null;
+  if(!zone)throw new Error(`Unknown drawdown market: ${market}`);
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{
+    timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+  }).formatToParts(now).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  const today=`${parts.year}-${parts.month}-${parts.day}`;
+  const minutes=Number(parts.hour)*60+Number(parts.minute);
+  // US 17:00 ET (after 16:00 close); TW 14:05 (after 13:30 close).
+  const finalized=minutes>=(market==='US'?17*60:14*60+5);
+  return (bars||[]).filter(x=>x.date<today||(x.date===today&&finalized));
+}
+
+// Yahoo can revise a candle without changing its trading date. A full replay
+// is required so ATH, cycle lows and BUY-trigger history remain consistent.
+export function needsSameDayCorrection(state,bars){
+  const matching=(bars||[]).find(x=>x.date===state?.trade_date);
+  return Boolean(matching&&Number.isFinite(Number(matching.close))&&
+    Math.abs(Number(matching.close)-Number(state.close))>=0.005);
+}
+
+// Recalculate a revised final close from the prior trading day's persisted
+// snapshot, rather than mutating the already-processed day's ATH/BUY events.
+export function replayCorrectedDrawdownDay(assetId,previous,date,close,triggeredIds=[]){
+  const price=Number(close),ath=Number(previous?.ath);
+  if(!(price>0&&ath>0))throw new Error('Invalid drawdown correction baseline');
+  if(price>ath+1e-9){
+    return{newCycle:true,asset_id:assetId,trade_date:date,close:price,
+      ath:price,ath_date:date,cycle_low:price,cycle_low_date:date,
+      current_drawdown_pct:0,max_cycle_drawdown_pct:0,recovery_from_low_pct:0,
+      current_level:'NORMAL',cumulative_allocation_pct:0,newHits:[]};
+  }
+  const cycleLow=Math.min(Number(previous.cycle_low),price);
+  const drawdown=(price/ath-1)*100;
+  const hits=crossedUntriggeredLevels(assetId,drawdown,triggeredIds);
+  const all=[...new Set([...triggeredIds,...hits.map(x=>x.id)])];
+  const levelNow=currentLevel(assetId,drawdown);
+  return{newCycle:false,asset_id:assetId,trade_date:date,close:price,
+    ath,ath_date:previous.ath_date,
+    cycle_low:cycleLow,cycle_low_date:price<Number(previous.cycle_low)?date:previous.cycle_low_date,
+    current_drawdown_pct:drawdown,
+    max_cycle_drawdown_pct:Math.min(Number(previous.max_cycle_drawdown_pct),drawdown),
+    recovery_from_low_pct:(price/cycleLow-1)*100,
+    current_level:levelNow?.id||(all.length?'RECOVERED':'NORMAL'),
+    cumulative_allocation_pct:cumulativeAllocation(assetId,all),newHits:hits};
+}
+
 export function currentLevel(assetId, drawdownPct){
   const cfg=getDrawdownConfig(assetId);
   let hit=null;

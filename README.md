@@ -1,3 +1,16 @@
+# big7-portfolio v2.8.3
+
+## Final-close integrity / same-day correction
+
+- US drawdown daily candles are finalized after 17:00 America/New_York; TW after 14:05 Asia/Taipei. Provisional same-day Yahoo chart values are ignored.
+- A revised close for the same trading date is reconciled from the previous day's persisted snapshot. The existing D1 daily history and earlier-cycle BUY triggers remain intact.
+- If the previous-day snapshot does not exist, the engine rebuilds from complete historical Yahoo daily data merged with the fresh recent chart, so the 24h history cache cannot override a corrected close.
+- Recalculate cycle ATH, low, maximum drawdown, and same-day BUY triggers. Keep prior-day alerts and timestamps for still-valid same-day alerts.
+- Cards now display the latest successful data-sync time in Taiwan local time.
+- An invalid cached admin token is cleared after an authentication failure, allowing a new entry on the next attempt.
+- No new D1 migration; existing DB and portfolio ledger are unchanged.
+- Run `npm run test:drawdown` before deployment. The release is not deployed automatically by this branch.
+
 # big7-portfolio v2.8.1
 
 Execution Asset Inception Gate Fix: dense daily history passes when it either covers >=19.5 years or reaches the ETF/provider firstTradeDate (inceptionComplete). Probe and production now use one shared domain helper. No D1 migration. Drawdown thresholds/trigger logic/Momentum Entry unchanged.
